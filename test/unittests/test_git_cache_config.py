@@ -57,10 +57,7 @@ class GitCacheConfigTest(TestCase):
         importlib.reload(git_cache.config)
         config = git_cache.config.Config()
 
-        if platform.system().lower().startswith("win"):
-            expected_git_cmd = "C:\\Program Files\\Git\\cmd\\git.exe"
-        else:
-            expected_git_cmd = "/usr/bin/git"
+        expected_git_cmd = git_cache.config._find_git()  # pylint: disable=protected-access
 
         self.assertEqual(config.get("System", "RealGit"), expected_git_cmd)
         self.assertEqual(config.get("MirrorHandling", "UpdateInterval"), 0)
@@ -113,10 +110,7 @@ permirrorstorage = false
         importlib.reload(git_cache.config)
         config = git_cache.config.Config()
 
-        if platform.system().lower().startswith("win"):
-            expected_git_cmd = "C:\\Program Files\\Git\\cmd\\git.exe"
-        else:
-            expected_git_cmd = "/usr/bin/git        "
+        expected_git_cmd = git_cache.config._find_git()  # pylint: disable=protected-access
 
         expected_config_str = f"""Clone:
  commandtimeout       = 1 hour               (GITCACHE_CLONE_COMMAND_TIMEOUT)
@@ -144,7 +138,7 @@ MirrorHandling:
  updateinterval       = 0 seconds            (GITCACHE_UPDATE_INTERVAL)
 
 System:
- realgit              = {expected_git_cmd} (GITCACHE_REAL_GIT)
+ realgit              = {expected_git_cmd : <20} (GITCACHE_REAL_GIT)
 
 Update:
  commandtimeout       = 1 hour               (GITCACHE_UPDATE_COMMAND_TIMEOUT)

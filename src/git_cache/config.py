@@ -48,21 +48,21 @@ ConverterMap: TypeAlias = Dict[str, Dict[str, ConfigItemConverter]]
 # -----------------------------------------------------------------------------
 # Converter Functions
 # -----------------------------------------------------------------------------
-def str_to_regex(string) -> str:
+def _str_to_regex(string) -> str:
     """Convert a string to a regex pattern with special treatment of an empty string."""
     if string:
         return string
     return "a^"  # This pattern should never match
 
 
-def str_to_bool(string) -> bool:
+def _str_to_bool(string) -> bool:
     """Convert a string to a boolean value."""
     if string.upper() in ["1", "ON", "TRUE", "YES"]:
         return True
     return False
 
 
-def str_to_seconds(string) -> int:
+def _str_to_seconds(string) -> int:
     """Convert a string to a seconds value."""
     seconds = pytimeparse.parse(string)
     if seconds is None:
@@ -92,7 +92,14 @@ def has_git_lfs_cmd() -> bool:
 # -----------------------------------------------------------------------------
 # Default Functions
 # -----------------------------------------------------------------------------
-def find_git() -> str:
+def _get_this_script_path() -> Path:
+    """Get the full path to the currently running gitcache resolving all symlinks."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve()
+    return (Path(__file__).parent.parent / "gitcache").resolve()
+
+
+def _find_git() -> str:
     """Locate the real git command.
 
     Return:
@@ -102,11 +109,16 @@ def find_git() -> str:
     path = os.getenv("PATH", "")
     on_windows = platform.system().lower().startswith("win")
     cmd = "git.exe" if on_windows else "git"
-    for candidate in path.split(os.path.pathsep):
-        candidate = os.path.join(candidate, cmd)
-        if os.path.exists(candidate) and os.access(candidate, os.X_OK):
-            if not os.path.islink(candidate):
-                return candidate
+    this_script = _get_this_script_path()
+    for candidate_path in path.split(os.path.pathsep):
+        candidate_exe = Path(candidate_path) / cmd
+        try:
+            candidate_exe = candidate_exe.resolve(strict=True)
+        except FileNotFoundError:
+            continue
+
+        if candidate_exe != this_script:
+            return str(candidate_exe)
 
     LOG.warning("Can't find git command! Please specify manually in the config file!")
     return "/usr/bin/git"
@@ -134,7 +146,7 @@ class ConfigItem:
         section: str,
         option: str,
         default: ConfigItemValue,
-        converter: ConfigItemConverter = str_to_seconds,
+        converter: ConfigItemConverter = _str_to_seconds,
         env: str = "auto",
     ) -> None:
         """Construct a configuration item.
@@ -217,13 +229,13 @@ class Config:
         loading the global configuration file.
         """
         self.items = []
-        self.items.append(ConfigItem("System", "RealGit", find_git(), converter=str, env="GITCACHE_REAL_GIT"))
+        self.items.append(ConfigItem("System", "RealGit", _find_git(), converter=str, env="GITCACHE_REAL_GIT"))
 
         self.items.append(ConfigItem("MirrorHandling", "UpdateInterval", "0 seconds", env="GITCACHE_UPDATE_INTERVAL"))
         self.items.append(ConfigItem("MirrorHandling", "CleanupAfter", "14 days", env="GITCACHE_CLEANUP_AFTER"))
 
-        self.items.append(ConfigItem("UrlPatterns", "IncludeRegex", ".*", converter=str_to_regex))
-        self.items.append(ConfigItem("UrlPatterns", "ExcludeRegex", "", converter=str_to_regex))
+        self.items.append(ConfigItem("UrlPatterns", "IncludeRegex", ".*", converter=_str_to_regex))
+        self.items.append(ConfigItem("UrlPatterns", "ExcludeRegex", "", converter=_str_to_regex))
 
         self.items.append(ConfigItem("Command", "WarnIfLockedFor", "10 seconds"))
         self.items.append(ConfigItem("Command", "CheckInterval", "2 seconds"))
@@ -244,7 +256,7 @@ class Config:
         self.items.append(ConfigItem("LFS", "Retries", 3, converter=int))
         self.items.append(ConfigItem("LFS", "CommandTimeout", "1 hour"))
         self.items.append(ConfigItem("LFS", "OutputTimeout", "5 minutes"))
-        self.items.append(ConfigItem("LFS", "PerMirrorStorage", True, converter=str_to_bool))
+        self.items.append(ConfigItem("LFS", "PerMirrorStorage", True, converter=_str_to_bool))
 
         self.config = configparser.ConfigParser()
         self.env_keys: EnvMap = {}
@@ -262,8 +274,8 @@ class Config:
     def _check_real_git(self) -> None:
         """Check the configured real git command."""
         try:
-            realgit = os.path.realpath(str(self.get("System", "RealGit")), strict=True)
-        except OSError as exception:
+            realgit = Path(str(self.get("System", "RealGit"))).resolve(strict=True)
+        except FileNotFoundError as exception:
             LOG.error("Can't resolve configured path to the real git command!")
             LOG.error("Configuration file:  %s", os.path.join(GITCACHE_DIR, "config"))
             LOG.error("Configured real git: %s", self.get("System", "RealGit"))
@@ -274,13 +286,7 @@ class Config:
             )
             sys.exit(1)
 
-        if getattr(sys, "frozen", False):
-            # pyinstaller already resolves any symlinks
-            same_file = sys.executable == realgit
-        else:
-            this_script = Path(__file__).parent.parent / "gitcache"
-            same_file = str(this_script.resolve()) == realgit
-        if same_file:
+        if _get_this_script_path() == realgit:
             LOG.error("The configured real git command is actually this script!")
             LOG.error("Configuration file:  %s", os.path.join(GITCACHE_DIR, "config"))
             LOG.error("Configured real git: %s", self.get("System", "RealGit"))

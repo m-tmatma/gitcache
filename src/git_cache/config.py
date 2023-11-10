@@ -23,7 +23,7 @@ import platform
 import re
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict
+from typing import Callable, Dict, Optional, TypeAlias, Union
 
 import pytimeparse
 
@@ -34,6 +34,15 @@ from .global_settings import GITCACHE_DIR
 # Logger
 # -----------------------------------------------------------------------------
 LOG = logging.getLogger(__name__)
+
+
+# -----------------------------------------------------------------------------
+# Type Aliases
+# -----------------------------------------------------------------------------
+ConfigItemValue: TypeAlias = Union[str, int, bool]
+ConfigItemConverter: TypeAlias = Callable[[str], ConfigItemValue]
+EnvMap: TypeAlias = Dict[str, Dict[str, str]]
+ConverterMap: TypeAlias = Dict[str, Dict[str, ConfigItemConverter]]
 
 
 # -----------------------------------------------------------------------------
@@ -124,8 +133,8 @@ class ConfigItem:
         self,
         section: str,
         option: str,
-        default: Any,
-        converter: Callable[[str], Any] = str_to_seconds,
+        default: ConfigItemValue,
+        converter: ConfigItemConverter = str_to_seconds,
         env: str = "auto",
     ) -> None:
         """Construct a configuration item.
@@ -172,7 +181,7 @@ class ConfigItem:
 
         config.set(self.section, self.option, str(self.default))
 
-    def add_to_env_keys(self, env_keys: Dict[str, Dict[str, str]]) -> None:
+    def add_to_env_keys(self, env_keys: EnvMap) -> None:
         """Add the configuration item to the env_keys map.
 
         Args:
@@ -185,7 +194,7 @@ class ConfigItem:
                 env_keys[env_section] = {}
             env_keys[env_section][env_option] = self.env
 
-    def add_to_converters(self, converters: Dict[str, Dict[str, Callable[[str], Any]]]) -> None:
+    def add_to_converters(self, converters: ConverterMap) -> None:
         """Add the configuration item to the converters map.
 
         Args:
@@ -238,8 +247,8 @@ class Config:
         self.items.append(ConfigItem("LFS", "PerMirrorStorage", True, converter=str_to_bool))
 
         self.config = configparser.ConfigParser()
-        self.env_keys: Dict[str, Dict[str, str]] = {}
-        self.converters: Dict[str, Dict[str, Callable[[str], Any]]] = {}
+        self.env_keys: EnvMap = {}
+        self.converters: ConverterMap = {}
         for item in self.items:
             item.add_to_configparser(self.config)
             item.add_to_env_keys(self.env_keys)
@@ -253,7 +262,7 @@ class Config:
     def _check_real_git(self) -> None:
         """Check the configured real git command."""
         try:
-            realgit = os.path.realpath(self.get("System", "RealGit"), strict=True)
+            realgit = os.path.realpath(str(self.get("System", "RealGit")), strict=True)
         except OSError as exception:
             LOG.error("Can't resolve configured path to the real git command!")
             LOG.error("Configuration file:  %s", os.path.join(GITCACHE_DIR, "config"))
@@ -281,28 +290,28 @@ class Config:
             )
             sys.exit(1)
 
-    def get(self, section: str, option: str) -> Any:
+    def get(self, section: str, option: str) -> Optional[ConfigItemValue]:
         """Get a configuration value.
 
         Args:
             section (str): The section, e.g., 'Clone'.
             option (str):  The option, e.g., 'Retries'.
         Return:
-            Returns the current value of the specified option.
+            Returns the current value of the specified option or None if it is not found.
         """
-        value = None
+        str_value: Optional[str] = None
         env_key = self.env_keys.get(section.upper(), {}).get(option.upper())
         converter = self.converters.get(section.upper(), {}).get(option.upper())
 
         if env_key:
-            value = os.getenv(env_key, None)
-        if value is None:
-            value = self.config.get(section, option)
-
+            str_value = os.getenv(env_key, None)
+        if str_value is None:
+            str_value = self.config.get(section, option)
+        if str_value is None:
+            return None
         if converter:
-            value = converter(value)
-
-        return value
+            return converter(str_value)
+        return str_value
 
     def load(self, filename: str) -> bool:
         """Load the configuration file.

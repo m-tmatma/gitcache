@@ -14,7 +14,6 @@
 # -----------------------------------------------------------------------------
 import importlib
 import os
-import platform
 from unittest import TestCase
 
 import mock

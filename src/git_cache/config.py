@@ -23,7 +23,7 @@ import platform
 import re
 import sys
 from pathlib import Path
-from typing import Callable, Dict, Optional, TypeAlias, Union
+from typing import Callable, Dict, Optional, Union
 
 import pytimeparse
 
@@ -39,10 +39,10 @@ LOG = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # Type Aliases
 # -----------------------------------------------------------------------------
-ConfigItemValue: TypeAlias = Union[str, int, bool]
-ConfigItemConverter: TypeAlias = Callable[[str], ConfigItemValue]
-EnvMap: TypeAlias = Dict[str, Dict[str, str]]
-ConverterMap: TypeAlias = Dict[str, Dict[str, ConfigItemConverter]]
+ConfigItemValue = Union[str, int, bool]
+ConfigItemConverter = Callable[[str], ConfigItemValue]
+EnvMap = Dict[str, Dict[str, str]]
+ConverterMap = Dict[str, Dict[str, ConfigItemConverter]]
 
 
 # -----------------------------------------------------------------------------
@@ -113,11 +113,12 @@ def _find_git() -> str:
     for candidate_path in path.split(os.path.pathsep):
         candidate_exe = Path(candidate_path) / cmd
         try:
-            candidate_exe = candidate_exe.resolve(strict=True)
+            resolved_exe = candidate_exe.resolve(strict=True)
         except FileNotFoundError:
             continue
 
-        if candidate_exe != this_script:
+        if resolved_exe != this_script:
+            LOG.debug("Found real git command as %s (resolving to %s).", candidate_exe, resolved_exe)
             return str(candidate_exe)
 
     LOG.warning("Can't find git command! Please specify manually in the config file!")
